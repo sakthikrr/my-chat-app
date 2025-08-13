@@ -14,12 +14,26 @@ const PORT = process.env.PORT || 3000;
 
 // Connect to MongoDB Atlas
 console.log('Connecting to MongoDB Atlas...');
-mongoose.connect(process.env.MONGODB_URI, {
+
+// Set up MongoDB connection options
+const connectWithRetry = () => {
+  mongoose.connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
-    useUnifiedTopology: true
-})
-.then(() => console.log('Connected to MongoDB Atlas successfully!'))
-.catch(err => console.error('MongoDB connection error:', err));
+    useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+    socketTimeoutMS: 45000 // Close sockets after 45s of inactivity
+  })
+  .then(() => {
+    console.log('Connected to MongoDB Atlas successfully!');
+  })
+  .catch(err => {
+    console.error('MongoDB connection error:', err);
+    console.log('Retrying connection in 5 seconds');
+    setTimeout(connectWithRetry, 5000);
+  });
+};
+
+connectWithRetry();
 
 // Enable CORS for all routes
 app.use(cors());
