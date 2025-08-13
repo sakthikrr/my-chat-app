@@ -37,6 +37,8 @@ class ChatController {
 
     async getMessages(req, res) {
         try {
+            console.log('Retrieving messages');
+            
             // Add pagination support
             const page = parseInt(req.query.page) || 1;
             const limit = parseInt(req.query.limit) || 20;
@@ -54,16 +56,31 @@ class ChatController {
                 filter.sender = req.query.sender;
             }
             
-            // Get messages with filters applied
-            const messages = await this.messageModel
-                .find(filter)
-                .sort(sortOptions)
-                .skip(skip)
-                .limit(limit);
-                
-            // Get total count for pagination
-            const total = await this.messageModel.countDocuments(filter);
+            // Create a promise with timeout to avoid serverless function timeouts
+            const findMessagesWithTimeout = async () => {
+                return Promise.race([
+                    // The actual DB query
+                    this.messageModel
+                        .find(filter)
+                        .sort(sortOptions)
+                        .skip(skip)
+                        .limit(limit)
+                        .lean(), // Use lean() for better performance
+                    
+                    // A timeout promise
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Database query timed out after 8 seconds')), 8000)
+                    )
+                ]);
+            };
             
+            // Execute the query with timeout
+            const messages = await findMessagesWithTimeout();
+                
+            // Get total count for pagination (with a simpler query that's less likely to timeout)
+            const total = await this.messageModel.estimatedDocumentCount();
+            
+            // Return the data
             res.status(200).json({
                 success: true,
                 data: messages,
@@ -74,6 +91,8 @@ class ChatController {
                     pages: Math.ceil(total / limit)
                 }
             });
+            
+            console.log('Successfully retrieved messages');
         } catch (error) {
             console.error('Error getting messages:', error);
             res.status(500).json({ 
